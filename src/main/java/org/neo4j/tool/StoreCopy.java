@@ -228,9 +228,30 @@ public class StoreCopy {
                     } else {
                         long newNodeId=node;
                         if (stableNodeIds) {
-                            targetDb.createNode(node, getProperties(sourceDb.getNodeProperties(node), ignoreProperties), labelsArray(sourceDb, node, ignoreLabels));
+                            try{
+                                targetDb.createNode(node, getProperties(sourceDb.getNodeProperties(node), ignoreProperties), labelsArray(sourceDb, node, ignoreLabels));
+                            }catch(Exception e) {
+                                addLog(node, String.format("CreateNodeOnTargetStable -> %s", e.toString()));
+                                e.printStackTrace();
+                            }
                         } else {
-                            newNodeId = targetDb.createNode(getProperties(sourceDb.getNodeProperties(node), ignoreProperties), labelsArray(sourceDb, node, ignoreLabels));
+                            try {
+                                if(targetDb == null)
+                                    addLog(node, "targetDB is null!");
+
+                                Map<String, Object> sourceNodeProps = null;
+                                try{
+                                    //This is where the error comes from!
+                                    sourceNodeProps = sourceDb.getNodeProperties(node);
+                                } catch(Exception e){
+                                    addLog(node, "getNodeProperties Errored --> " + e.toString());
+                                    e.printStackTrace();
+                                }
+
+                                newNodeId = targetDb.createNode(getProperties(sourceNodeProps, ignoreProperties), labelsArray(sourceDb, node, ignoreLabels));
+                            }catch(Exception e) {
+                                addLog(node, String.format("CreateNodeOnTarget -> %s", e.toString()));
+                            }
                         }
                         copiedNodes.put(node,newNodeId);
                     }
@@ -240,7 +261,7 @@ public class StoreCopy {
             } catch (Exception e) {
                 if (e instanceof org.neo4j.kernel.impl.store.InvalidRecordException && e.getMessage().endsWith("not in use")) {
                     notFound++;
-                } else addLog(node, e.getMessage());
+                } else addLog(node, e.getMessage() + " --> " + e.toString());
             }
             node++;
             if (node % 10000 == 0) {
@@ -267,20 +288,36 @@ public class StoreCopy {
     }
 
     private static Label[] labelsArray(BatchInserter db, long node, Set<String> ignoreLabels) {
-        Collection<Label> labels = Iterables.asCollection(db.getNodeLabels(node));
-        if (labels.isEmpty()) return NO_LABELS;
-        if (!ignoreLabels.isEmpty()) {
-            labels.removeIf(label -> ignoreLabels.contains(label.name()));
+       try{
+        Iterable<Label> lbl = db.getNodeLabels(node);
+
+            Collection<Label> labels = Iterables.asCollection(lbl);
+            if (labels.isEmpty()) return NO_LABELS;
+            if (!ignoreLabels.isEmpty()) {
+                labels.removeIf(label -> ignoreLabels.contains(label.name()));
+            }
+            return labels.toArray(new Label[labels.size()]);
+        }catch(Exception e){
+            addLog(-3, String.format("Error in labelsArray --> %s", e.toString()));
+            return NO_LABELS;
         }
-        return labels.toArray(new Label[labels.size()]);
     }
 
     private static Map<String, Object> getProperties(Map<String, Object> pc, Set<String> ignoreProperties) {
-        if (pc.isEmpty()) return Collections.emptyMap();
-        if (!ignoreProperties.isEmpty()) {
-            pc.keySet().removeAll(ignoreProperties);
+        try {
+            if (pc == null)
+                addLog(-1, "pc Null");
+            if (ignoreProperties == null)
+                addLog(-1, "ignoreProperties NULL");
+            if (pc.isEmpty()) return Collections.emptyMap();
+            if (!ignoreProperties.isEmpty()) {
+                pc.keySet().removeAll(ignoreProperties);
+            }
+            return pc;
+        }catch(Exception e){
+            addLog(-2, String.format("getProperties Error --> %s", e.toString()));
+            return Collections.emptyMap();
         }
-        return pc;
     }
 
     private static void addLog(BatchRelationship rel, String property, String message) {
